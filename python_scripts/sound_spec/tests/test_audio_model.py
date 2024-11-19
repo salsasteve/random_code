@@ -6,8 +6,8 @@ from sound_spec.audio_model import (
     SAMPLE_RATE,
     FFT_SIZE,
     DEFAULT_NUM_BINS,
-    MAX_FREQ,
     FREQUENCY_RESOLUTION,
+    MAX_HUMAN_HEARING_FREQ,
 )
 from unittest.mock import patch, MagicMock
 
@@ -143,11 +143,40 @@ def test_scale_bins(audio_model):
     assert scaled_bins[1] == 32
     assert scaled_bins[2] == 64
 
-def test_create_octave_bins(audio_model):
-    bins = audio_model.create_octave_bins()
-    assert len(bins) == DEFAULT_NUM_BINS
-    for start, end in bins:
+def test_create_octave_bins_config(audio_model):
+    bin_config = audio_model.create_octave_bins_config()
+    assert len(bin_config) == DEFAULT_NUM_BINS
+    assert audio_model.bin_config == bin_config
+    for start, end in bin_config:
         assert start < end
+
+def test_get_bin_indexes(audio_model):
+    bin_indexes = audio_model.get_bin_indexes()
+    assert len(bin_indexes) == DEFAULT_NUM_BINS
+    bin_sizes = [end - start for start, end in bin_indexes]
+    for i, (start, end) in enumerate(bin_indexes):
+        assert start <= end
+        assert start >= 0
+        assert end <= NYQUIST_FREQUENCY
+    
+    sum_bin_sizes = sum(bin_sizes)
+    total_num_of_bins = int((MAX_HUMAN_HEARING_FREQ - FREQUENCY_RESOLUTION) // FREQUENCY_RESOLUTION)
+    assert sum_bin_sizes == total_num_of_bins
+
+def test_sort_and_average_bins(audio_model):
+    chunk = audio_model.get_next_chunk()
+    _, yf = audio_model.compute_fft(chunk)
+    bins = audio_model.sort_and_average_bins(yf)
+    assert len(bins) == DEFAULT_NUM_BINS
+    for i, (start, end) in enumerate(audio_model.bin_indexes):
+        if start == end:
+            assert bins[i] == yf[start]
+        else:
+            bin_values = yf[start:end]
+            avg_bin_value = np.mean(bin_values)
+            assert bins[i] == avg_bin_value
+
+    
 
 
 if __name__ == "__main__":

@@ -24,3 +24,5 @@
 */.ruff
 */htmlcov/
 */htmlcov/*
+*.pyc
+.coverage

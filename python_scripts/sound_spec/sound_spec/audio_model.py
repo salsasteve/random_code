@@ -42,7 +42,9 @@ class AudioModel:
         self.window = np.hamming(fft_size)
         self.prev_bins = None  # For smoothing
         self.alpha = alpha  # Smoothing factor
-        self.bins = self.create_octave_bins()
+        self.bin_config = self.create_octave_bins_config()
+        self.bin_indexes = self.get_bin_indexes()
+        self.num_bins = num_bins
 
     # def read_wav(self, filename):
     #     signal, samplerate = sf.read(filename, dtype="int16")
@@ -104,7 +106,7 @@ class AudioModel:
 
         return scaled_bins.astype(int)
 
-    def create_octave_bins(
+    def create_octave_bins_config(
         self,
         num_bins: int = DEFAULT_NUM_BINS,
         frequency_resolution: float = FREQUENCY_RESOLUTION,
@@ -123,3 +125,28 @@ class AudioModel:
             end_freq = np.power(10, log_min + (i + 1) * bin_range)
             bins.append((start_freq, end_freq))
         return bins
+    
+    def get_bin_indexes(self) -> List[Tuple[int, int]]:
+        """
+        Returns the indexes of the bins in the FFT.
+        """
+        bin_indexes = []
+        for start, end in self.bin_config:
+            start_idx = int(start / FREQUENCY_RESOLUTION)
+            end_idx = int(end / FREQUENCY_RESOLUTION)
+            bin_indexes.append((start_idx, end_idx))
+        return bin_indexes
+    
+    def sort_and_average_bins(self, yf: np.ndarray) -> np.ndarray:
+        """
+        Sorts the FFT bins into octave bins and averages the values.
+        """
+        bins = np.zeros(self.num_bins)
+
+        for i, (start, end) in enumerate(self.bin_indexes):
+            if start == end:
+                bins[i] = yf[start]
+            else:
+                bins[i] = np.mean(yf[start:end])
+        return bins
+    
