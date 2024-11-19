@@ -7,20 +7,34 @@ import logging
 import threading
 from scipy.fft import fft
 from matplotlib.animation import FuncAnimation
+from typing import List, Tuple
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ### Model ###
 
+SAMPLE_RATE = 44100
+NYQUIST = SAMPLE_RATE / 2
+FFT_SIZE = 512
+MIN_FREQ = SAMPLE_RATE / FFT_SIZE # 86.13
+MAX_FREQ = SAMPLE_RATE / 2 # 22050
+MAX_HUMAN_HEARING_FREQ = 20000
+DEFAULT_NUM_BINS = 8
+
 class AudioModel:
-    def __init__(self, filename, chunk_size):
+    def __init__(self, filename: str, fft_size: int = FFT_SIZE, num_bins: int = DEFAULT_NUM_BINS):
+
+        if num_bins not in [8, 16, 32, 64]:
+            raise ValueError("Number of bins must be 8, 16, 32, or 64")
+        
         self.signal, self.samplerate = self.read_wav(filename)
-        self.chunk_size = chunk_size
+        self.chunk_size = fft_size
         self.position = 0
-        self.window = np.hamming(chunk_size)
+        self.window = np.hamming(fft_size)
         self.prev_bins = None  # For smoothing
         self.alpha = 0.3       # Smoothing factor (0 < alpha <= 1)
+        self.bins = self.create_octave_bins()
 
     def read_wav(self, filename):
         signal, samplerate = sf.read(filename, dtype='int16')
@@ -52,7 +66,9 @@ class AudioModel:
         """
         Computes the FFT of a given audio chunk.
         """
+        # yf is the magnitude of the FFT
         yf = np.abs(fft(chunk))[:len(chunk) // 2]
+        # xf is the frequency axis
         xf = np.fft.fftfreq(len(chunk), 1 / self.samplerate)[:len(chunk) // 2]
         return xf, yf
 
@@ -65,53 +81,35 @@ class AudioModel:
             self.prev_bins = smoothed_bins
             return smoothed_bins
 
-    def scale_bins(self, bins, scale_min=0, scale_max=63):
+    def scale_bins(self, bins, scale_min=0, scale_max=63): 
+        """On the display we have 64 pixels, so we scale the bins to fit in this range."""
         min_bin = np.min(bins)
         max_bin = np.max(bins)
         scaled_bins = scale_max * (bins - min_bin) / (max_bin - min_bin + 1e-6)
         return np.clip(scaled_bins, scale_min, scale_max)
-
-    def get_frequency_ranges(self, num_bins=8, freq_min=20, freq_max=20000):
-        """
-        Returns the frequency ranges for logarithmic bins.
-        """
-        freq_ranges = []
-        log_min = np.log10(freq_min)
-        log_max = np.log10(freq_max)
-        
-        for i in range(num_bins):
-            start_freq = np.power(10, log_min + i * (log_max - log_min) / num_bins)
-            end_freq = np.power(10, log_min + (i + 1) * (log_max - log_min) / num_bins)
-            freq_ranges.append((start_freq, end_freq))
-            
-        return freq_ranges
-
-    def create_logarithmic_bins(self, xf, yf, freq_ranges):
-        """
-        Creates logarithmic frequency bins for the FFT data given freq_ranges.
-        """
-        bins = np.zeros(len(freq_ranges))
-        for i, (start_freq, end_freq) in enumerate(freq_ranges):
-            start_idx = np.searchsorted(xf, start_freq)
-            end_idx = np.searchsorted(xf, end_freq)
-            bins[i] = np.sum(yf[start_idx:end_idx])
-        return bins
     
-    def create_bins(xf, yf, num_bins=8):
-        bin_size = len(xf) // num_bins
-        bins = np.zeros(num_bins)
+    def create_octave_bins(self, num_bins: int = DEFAULT_NUM_BINS, min_freq: float = MIN_FREQ, max_freq: float = MAX_HUMAN_HEARING_FREQ) -> List[Tuple[float, float]]:
+        """
+        Computes the frequency ranges for octave bins.
+        """
+        bins = []
+        log_min = np.log10(min_freq)
+        log_max = np.log10(max_freq)
+        total_freq_range = log_max - log_min
+        bin_range = total_freq_range / num_bins
         for i in range(num_bins):
-            start = i * bin_size
-            end = start + bin_size
-            bins[i] = np.sum(yf[start:end])
+            start_freq = np.power(10, log_min + i * bin_range)  
+            end_freq = np.power(10, log_min + (i + 1) * bin_range)
+            bins.append((start_freq, end_freq))
         return bins
 
 ### View ###
 
 class VisualizerView:
-    def __init__(self, model, visualization_mode='bar', num_bins=8):
+    def __init__(self, model, visualization_mode='bar', num_bins=8, freq_min=86,freq_max=20000):
         self.model = model
         self.visualization_mode = visualization_mode
+        self.bin_ranges = self.model.create_octave_bins(num_bins, freq_min, freq_max)
         self.num_bins = num_bins
         self.fig = None
         self.ax = None
@@ -192,23 +190,25 @@ def play_audio(signal, samplerate):
     sd.wait()  # Wait until playback is finished
 
 def main():
-    filename = "PinkPanther60.wav"  # Replace with your audio file
-    chunk_size = 4096
-    visualization_mode = 'bar'  # 'bar' or 'line'
-    num_bins = 8
+    filename = "PinkPanther60.wav"
+    visualization_mode = 'bar'
 
-    model = AudioModel(filename, chunk_size)
-    view = VisualizerView(model, visualization_mode=visualization_mode, num_bins=num_bins)
+    model = AudioModel(filename=filename)
 
-    # Start audio playback in a separate thread
-    play_thread = threading.Thread(target=play_audio, args=(model.signal, model.samplerate))
-    play_thread.start()
+    # test model
 
-    # Start the visualization
-    view.animate()
+    
+    # view = VisualizerView(model, visualization_mode=visualization_mode, num_bins=num_bins)
 
-    # Wait for the audio playback to finish
-    play_thread.join()
+    # # Start audio playback in a separate thread
+    # play_thread = threading.Thread(target=play_audio, args=(model.signal, model.samplerate))
+    # play_thread.start()
+
+    # # Start the visualization
+    # view.animate()
+
+    # # Wait for the audio playback to finish
+    # play_thread.join()
 
 if __name__ == "__main__":
     main()
