@@ -34,6 +34,19 @@ def audio_model(sample_signal):
     )
     return model
 
+@pytest.fixture
+def audio_model_linear(sample_signal):
+    # Initialize the AudioModel with the synthetic signal
+    model = AudioModel(
+        signal=sample_signal,
+        fft_size=FFT_SIZE,
+        num_bins=DEFAULT_NUM_BINS,
+        sample_rate=SAMPLE_RATE,
+        bin_split="linear",
+    )
+    return model
+
+
 def test_audio_model_bad_num_bins(sample_signal):
     with pytest.raises(ValueError):
         AudioModel(
@@ -42,6 +55,7 @@ def test_audio_model_bad_num_bins(sample_signal):
             num_bins=10,
             sample_rate=SAMPLE_RATE,
         )
+
 
 def test_audio_model_bad_alpha(sample_signal):
     with pytest.raises(ValueError):
@@ -52,7 +66,6 @@ def test_audio_model_bad_alpha(sample_signal):
             sample_rate=SAMPLE_RATE,
             alpha=1.5,
         )
-
 
 
 def test_get_next_chunk(audio_model):
@@ -143,12 +156,14 @@ def test_scale_bins(audio_model):
     assert scaled_bins[1] == 32
     assert scaled_bins[2] == 64
 
+
 def test_create_octave_bins_config(audio_model):
     bin_config = audio_model.create_octave_bins_config()
     assert len(bin_config) == DEFAULT_NUM_BINS
     assert audio_model.bin_config == bin_config
     for start, end in bin_config:
         assert start < end
+
 
 def test_get_bin_indexes(audio_model):
     bin_indexes = audio_model.get_bin_indexes()
@@ -158,10 +173,13 @@ def test_get_bin_indexes(audio_model):
         assert start <= end
         assert start >= 0
         assert end <= NYQUIST_FREQUENCY
-    
+
     sum_bin_sizes = sum(bin_sizes)
-    total_num_of_bins = int((MAX_HUMAN_HEARING_FREQ - FREQUENCY_RESOLUTION) // FREQUENCY_RESOLUTION)
+    total_num_of_bins = int(
+        (MAX_HUMAN_HEARING_FREQ - FREQUENCY_RESOLUTION) // FREQUENCY_RESOLUTION
+    )
     assert sum_bin_sizes == total_num_of_bins
+
 
 def test_sort_and_average_bins(audio_model):
     chunk = audio_model.get_next_chunk()
@@ -176,7 +194,14 @@ def test_sort_and_average_bins(audio_model):
             avg_bin_value = np.mean(bin_values)
             assert bins[i] == avg_bin_value
 
-    
+
+
+def test_create_linear_bins_config(audio_model_linear):
+    bin_config = audio_model_linear.create_linear_bins_config()
+    assert len(bin_config) == DEFAULT_NUM_BINS
+    assert audio_model_linear.bin_config == bin_config
+    for start, end in bin_config:
+        assert start < end
 
 
 if __name__ == "__main__":
