@@ -17,32 +17,10 @@ def play_audio(signal, samplerate):
     sd.play(signal, samplerate)
     sd.wait()  # Wait until playback is finished
 
+
 def read_wav(filename):
-    signal, samplerate = sf.read(filename, dtype='int16')
+    signal, samplerate = sf.read(filename, dtype="int16")
     # Normalize if necessary
     if signal.dtype != np.float32:
         signal = signal / np.max(np.abs(signal))
     return signal, samplerate
-
-
-def main():
-    filename = "python_scripts\sound_spec\sounds\chirp.wav"
-
-    signal, samplerate = read_wav(filename)
-
-    model = AudioModel(signal, sample_rate=samplerate)
-
-    view = VisualizerView(model)
-
-    # Start audio playback in a separate thread
-    play_thread = threading.Thread(target=play_audio, args=(model.signal, model.samplerate))
-    play_thread.start()
-
-    # Start the visualization
-    view.animate()
-
-    # Wait for the audio playback to finish
-    play_thread.join()
-
-if __name__ == "__main__":
-    main()

@@ -28,6 +28,7 @@ class AudioModel:
         num_bins: int = DEFAULT_NUM_BINS,
         sample_rate: int = SAMPLE_RATE,
         alpha: float = 0.3,
+        bin_split: str = "octave",
     ):
         if num_bins not in [8, 16, 32, 64]:
             raise ValueError("Number of bins must be 8, 16, 32, or 64")
@@ -42,7 +43,10 @@ class AudioModel:
         self.window = np.hamming(fft_size)
         self.prev_bins = None  # For smoothing
         self.alpha = alpha  # Smoothing factor
-        self.bin_config = self.create_octave_bins_config()
+        if bin_split == "linear":
+            self.bin_config = self.create_linear_bins_config(num_bins=num_bins)
+        else:
+            self.bin_config = self.create_octave_bins_config(num_bins=num_bins)
         self.bin_indexes = self.get_bin_indexes()
         self.num_bins = num_bins
 
@@ -94,7 +98,9 @@ class AudioModel:
             self.prev_bins = smoothed_bins
             return smoothed_bins
 
-    def scale_bins(self, bins: np.ndarray, scale_min: int = 0, scale_max: int = 65) -> np.ndarray:
+    def scale_bins(
+        self, bins: np.ndarray, scale_min: int = 0, scale_max: int = 65
+    ) -> np.ndarray:
         """On the display we have 64 pixels, so we scale the bins to fit in this range."""
         max_bin = np.max(bins)
 
@@ -105,27 +111,47 @@ class AudioModel:
         scaled_bins = np.clip(scaled_bins, scale_min, scale_max)
 
         return scaled_bins.astype(int)
+    
+    def create_linear_bins_config(
+        self,
+        num_bins: int = DEFAULT_NUM_BINS,
+        min_freq: float = FREQUENCY_RESOLUTION,
+        max_freq: float = MAX_HUMAN_HEARING_FREQ,
+    ) -> List[Tuple[float, float]]:
+        """
+        Computes frequency ranges for bins with linear spacing.
+        """
+        bins = []
+        bin_width = (max_freq - min_freq) / num_bins
+        for i in range(num_bins):
+            start_freq = min_freq + i * bin_width
+            end_freq = start_freq + bin_width
+            bins.append((start_freq, end_freq))
+        return bins
 
     def create_octave_bins_config(
         self,
         num_bins: int = DEFAULT_NUM_BINS,
         frequency_resolution: float = FREQUENCY_RESOLUTION,
         max_freq: float = MAX_HUMAN_HEARING_FREQ,
+        bin_size_multiplier: float = 3.0,
     ) -> List[Tuple[float, float]]:
         """
-        Computes the frequency ranges for octave bins.
+        Computes the frequency ranges for octave bins with adjustable bin sizes.
         """
         bins = []
         log_min = np.log10(frequency_resolution)
         log_max = np.log10(max_freq)
-        total_freq_range = log_max - log_min
-        bin_range = total_freq_range / num_bins
+        total_log_range = log_max - log_min
+
+        bin_range = total_log_range / num_bins
         for i in range(num_bins):
-            start_freq = np.power(10, log_min + i * bin_range)
-            end_freq = np.power(10, log_min + (i + 1) * bin_range)
+            start_freq = 10 ** (log_min + i * bin_range)
+            end_freq = 10 ** (log_min + (i + 1) * bin_range)
             bins.append((start_freq, end_freq))
+            
         return bins
-    
+
     def get_bin_indexes(self) -> List[Tuple[int, int]]:
         """
         Returns the indexes of the bins in the FFT.
@@ -136,7 +162,7 @@ class AudioModel:
             end_idx = int(end / FREQUENCY_RESOLUTION)
             bin_indexes.append((start_idx, end_idx))
         return bin_indexes
-    
+
     def sort_and_average_bins(self, yf: np.ndarray) -> np.ndarray:
         """
         Sorts the FFT bins into octave bins and averages the values.
@@ -149,4 +175,3 @@ class AudioModel:
             else:
                 bins[i] = np.mean(yf[start:end])
         return bins
-    
